@@ -43,9 +43,13 @@ def sort():
 
 
 def readFile():
-	f = open("todo.txt", "r")
-	lines = str.split(f.read(), "\n")
-	f.close()
+	try:
+		f = open("todo.txt", "r")
+		lines = str.split(f.read(), "\n")
+		f.close()
+	except:
+		printTasks()
+		return
 	
 	for i in lines:	
 		line = str.split(i, ' ')
