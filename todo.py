@@ -1,7 +1,17 @@
-from datetime import date
-from datetime import timedelta
+import gflags
+import httplib2
+
+import datetime
+
 from collections import namedtuple
 from operator import attrgetter
+
+from apiclient.discovery import build
+from oauth2client.file import Storage
+from oauth2client.client import OAuth2WebServerFlow
+from oauth2client.tools import run
+
+
 
 Task = namedtuple('Task', 'description due')
 daysofweek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -10,10 +20,10 @@ months = ["January", "February", "March", "April", "May", "June", "July", "Augus
 #returns the next "day" (of the week, 1-7) in "week" weeks
 #does not include the current day
 def nextDay(day, week):	
-	temp = date.today()
+	temp = datetime.date.today()
 	weekspassed = -1
 	while weekspassed < week:
-		temp = temp + timedelta(1)
+		temp = temp + datetime.timedelta(1)
 		if temp.isoweekday() == day:
 			weekspassed += 1
 	return temp
@@ -30,11 +40,11 @@ def addTask(line):
 	if index + 1 < len(words) and index != -1:	#an actual due date exists, probably
 		tasks.append(Task(description = ' '.join(words[1:index]), due = convertDate(' '.join(lowerwords[index + 1:len(lowerwords)]))))
 	else:	
-		tasks.append(Task(description = ' '.join(words[1:len(words)]), due = date(1000, 1, 1)))
+		tasks.append(Task(description = ' '.join(words[1:len(words)]), due = datetime.date(1000, 1, 1)))
 		
 	sort()
 	printTasks()
-	writeFile()
+	writeTasks()
 	
 def sort():
 	global tasks
@@ -42,30 +52,41 @@ def sort():
 	tasks = sorted(tasks, key=attrgetter('due'))
 
 
-def readFile():
+def readTasks():
 	try:
-		f = open("todo.txt", "r")
-		lines = str.split(f.read(), "\n")
-		f.close()
-	except:
-		printTasks()
-		return
-	
-	for i in lines:	
-		line = str.split(i, ' ')
-		if len(line) >= 2:
-			tempdate = str.split(line[-1], '-')
-			if len(tempdate) >= 3:
-				tasks.append(Task(description = " ".join(line[0:len(line) - 1]), due = date(int(tempdate[0]), int(tempdate[1]), int(tempdate[2]))))
-	
+		tempTasks = service.tasks().list(tasklist='@default').execute()
+
+		for task in tempTasks['items']:
+			if task['title'].strip() == '':
+				service.tasks().delete(tasklist='@default', task=task['id']).execute()
+			else:
+				try:
+					line = task['due'].split('T')[0].split('-')
+					tempDate = datetime.date(int(line[0]), int(line[1]), int(line[2]))
+				except:
+					tempDate = datetime.date(1000, 1, 1)
+				tasks.append(Task(description = task['title'], due = tempDate))
+	except KeyError:	#no tasks
+		pass
+
 	sort()		
 	printTasks()
 
-def writeFile():
-	f = open("todo.txt", "w")
+def writeTasks():
+	try:
+		tempTasks = service.tasks().list(tasklist='@default').execute()
+
+		for task in tempTasks['items']:
+			service.tasks().delete(tasklist='@default', task=task['id']).execute()
+	except KeyError:	#no tasks
+		pass
+	
 	for task in tasks:
-		f.write(task.description + " " + str(task.due) + '\n')
-	f.close()
+		if task.due == datetime.date(1000, 1, 1):
+			temp = {'title': task.description}
+		else:
+			temp = {'title': task.description, 'due': task.due.isoformat() + 'T00:00:00.000Z'}
+		service.tasks().insert(tasklist='@default', body=temp).execute()
 	
 def getInput():
 	line = raw_input(">")
@@ -79,7 +100,7 @@ def getInput():
 		try:
 			tasks.pop(int(str.split(line, ' ')[-1]) - 1)
 			printTasks()
-			writeFile()
+			writeTasks()
 		except:
 			pass
 	return True
@@ -90,25 +111,25 @@ def printTasks():
 	for task in tasks:
 		print str(i),
 		i += 1
-		if task.due == date(1000, 1, 1):
+		if task.due == datetime.date(1000, 1, 1):
 			print task.description
 		else:
 			print task.description, "due", convertDate(task.due)
 	print "=================================================="
 
 def convertDate(temp):
-	if type(temp) == date:
-		if temp == date.today():
+	if type(temp) == datetime.date:
+		if temp == datetime.date.today():
 			return "Today"
-		elif temp == date.today() - timedelta(1):
+		elif temp == datetime.date.today() - datetime.timedelta(1):
 			return "Yesterday"
-		elif temp == date.today() + timedelta(1):
+		elif temp == datetime.date.today() + datetime.timedelta(1):
 			return "Tomorrow"
-		elif (temp - date.today()).days < -1 and (temp - date.today()).days >= -7:
+		elif (temp - datetime.date.today()).days < -1 and (temp - datetime.date.today()).days >= -7:
 			return "Last " + daysofweek[temp.weekday()]
-		elif (temp - date.today()).days > 1 and (temp - date.today()).days <= 7:
+		elif (temp - datetime.date.today()).days > 1 and (temp - datetime.date.today()).days <= 7:
 			return daysofweek[temp.weekday()]
-		elif (temp - date.today()).days > 7 and (temp - date.today()).days <= 14:
+		elif (temp - datetime.date.today()).days > 7 and (temp - datetime.date.today()).days <= 14:
 			return "Next " + daysofweek[temp.weekday()] 
 		else:
 			return months[temp.month - 1] + " " + str(temp.day)
@@ -133,9 +154,9 @@ def convertDate(temp):
 					for i, month in enumerate(lowermonths, start=1):
 						if str.find(month, words[0]) == 0:
 							try:
-								tempdate = date(date.today().year, i, int(words[1]))
-								if (tempdate - date.today()).days < 0:
-									return date(date.today().year + 1, i, int(words[1]))
+								tempdate = datetime.date(date.today().year, i, int(words[1]))
+								if (tempdate - datetime.date.today()).days < 0:
+									return datetime.date(datetime.date.today().year + 1, i, int(words[1]))
 								else:
 									return tempdate
 							except:
@@ -143,17 +164,57 @@ def convertDate(temp):
 		elif len(words) == 1:
 			if len(words[0]) >= 3:
 				if str.find('tomorrow', words[0]) == 0:
-					return date.today() + timedelta(1)
+					return datetime.date.today() + datetime.timedelta(1)
 				elif str.find('today', words[0]) == 0:
-					return date.today()
+					return datetime.date.today()
 				for i, day in enumerate(lowerdays, start=1):
 					if str.find(day, words[0]) == 0:
 						return nextDay(i, 0)
 			
-		return date(1000, 1, 1)
+		return datetime.date(1000, 1, 1)
+print "Connecting to Google Tasks..."
+
+FLAGS = gflags.FLAGS
+
+# Set up a Flow object to be used if we need to authenticate. This
+# sample uses OAuth 2.0, and we set up the OAuth2WebServerFlow with
+# the information it needs to authenticate. Note that it is called
+# the Web Server Flow, but it can also handle the flow for native
+# applications
+# The client_id and client_secret are copied from the API Access tab on
+# the Google APIs Console
+FLOW = OAuth2WebServerFlow(
+	client_id='YOUR_CLIENT_ID',
+	client_secret='YOUR_CLIENT_SECRET',
+	scope='https://www.googleapis.com/auth/tasks',
+	user_agent='TODO/0.1')
+
+# To disable the local server feature, uncomment the following line:
+# FLAGS.auth_local_webserver = False
+
+# If the Credentials don't exist or are invalid, run through the native client
+# flow. The Storage object will ensure that if successful the good
+# Credentials will get written back to a file.
+storage = Storage('todo.dat')
+credentials = storage.get()
+if credentials is None or credentials.invalid == True:
+	credentials = run(FLOW, storage)
+
+# Create an httplib2.Http object to handle our HTTP requests and authorize it
+# with our good Credentials.
+http = httplib2.Http()
+http = credentials.authorize(http)
+
+# Build a service object for interacting with the API. Visit
+# the Google APIs Console
+# to get a developerKey for your own application.
+service = build(serviceName='tasks', version='v1', http=http,
+	developerKey='YOUR_DEVELOPERKEY')
+
+print "Done."
 
 tasks = []
 
-readFile()
+readTasks()
 while getInput():
 	pass
