@@ -154,7 +154,7 @@ def convertDate(temp):
 					for i, month in enumerate(lowermonths, start=1):
 						if str.find(month, words[0]) == 0:
 							try:
-								tempdate = datetime.date(date.today().year, i, int(words[1]))
+								tempdate = datetime.date(datetime.date.today().year, i, int(words[1]))
 								if (tempdate - datetime.date.today()).days < 0:
 									return datetime.date(datetime.date.today().year + 1, i, int(words[1]))
 								else:
